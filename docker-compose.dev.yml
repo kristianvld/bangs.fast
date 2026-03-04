@@ -1,0 +1,9 @@
+services:
+  bangs:
+    image: bangs.fast:dev
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    ports:
+      - "${PORT:-8080}:8080"
+    restart: unless-stopped

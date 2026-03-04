@@ -1,0 +1,6 @@
+services:
+  bangs:
+    image: "${BANGS_IMAGE:-ghcr.io/kristianvld/bangs.fast:latest}"
+    ports:
+      - "${PORT:-8080}:8080"
+    restart: unless-stopped
