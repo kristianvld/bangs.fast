@@ -466,7 +466,7 @@ function parseSharePayload(candidate: unknown):
     return { ok: false, reason: "Shared settings version is not supported." };
   }
 
-  const nextPreset = isBangSourcePreset(candidate.p) ? candidate.p : "kagi";
+  const nextPreset = isBangSourcePreset(candidate.p) ? candidate.p : "ddg";
   const defaultEngine = isDefaultEngine(candidate.e) ? candidate.e : DEFAULT_STATE.settings.defaultEngine;
   const defaultBangTrigger = sanitizeToken(candidate.b) ?? DEFAULT_STATE.settings.defaultBangTrigger;
 

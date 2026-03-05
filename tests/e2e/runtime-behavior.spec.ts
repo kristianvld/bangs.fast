@@ -2,7 +2,8 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 
 const APP_DB_NAME = "bangs-redirect-index";
 const DATASET_STORE_NAME = "datasets";
-const COMMUNITY_SOURCE_ID = "kagi-community";
+const DATASET_SOURCE_ID = "duckduckgo";
+const DATASET_SOURCE_PATH = "/datasets/duckduckgo.json";
 
 type VersionFixture = {
   appBuildId: string;
@@ -22,15 +23,15 @@ function buildVersionFixture({ appBuildId, hash }: VersionFixture): Record<strin
     appBuildId,
     generatedAt: new Date().toISOString(),
     datasets: {
-      [COMMUNITY_SOURCE_ID]: { hash },
+      [DATASET_SOURCE_ID]: { hash },
     },
   };
 }
 
 function buildCommunityDatasetFixture({ hash, trigger, name, template, domain }: DatasetFixture): Record<string, unknown> {
   return {
-    sourceId: COMMUNITY_SOURCE_ID,
-    sourceUrl: "/datasets/kagi-community.json",
+    sourceId: DATASET_SOURCE_ID,
+    sourceUrl: DATASET_SOURCE_PATH,
     fetchedAt: new Date().toISOString(),
     hash,
     bangs: [
@@ -179,7 +180,7 @@ test("editor detects app build updates and rolls service worker to new build id"
     });
   });
 
-  await context.route("**/datasets/kagi-community.json", async (route) => {
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -253,7 +254,7 @@ test("refreshes enabled dataset when version hash changes", async ({ context, pa
     });
   });
 
-  await context.route("**/datasets/kagi-community.json", async (route) => {
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
     communityFetchCount += 1;
     const payload =
       generation === 1
@@ -283,7 +284,7 @@ test("refreshes enabled dataset when version hash changes", async ({ context, pa
   await waitForEditorReady(page);
   await expect(page.locator("#bang-table")).toContainText("!versionone");
   expect(communityFetchCount).toBeGreaterThan(0);
-  await expect.poll(async () => readStoredDatasetHash(page, COMMUNITY_SOURCE_ID)).toBe("community-hash-v1");
+  await expect.poll(async () => readStoredDatasetHash(page, DATASET_SOURCE_ID)).toBe("community-hash-v1");
 
   generation = 2;
   communityFetchCount = 0;
@@ -293,7 +294,7 @@ test("refreshes enabled dataset when version hash changes", async ({ context, pa
   await expect(page.locator("#bang-table")).toContainText("!versiontwo");
   await expect(page.locator("#bang-table")).not.toContainText("!versionone");
   expect(communityFetchCount).toBeGreaterThan(0);
-  await expect.poll(async () => readStoredDatasetHash(page, COMMUNITY_SOURCE_ID)).toBe("community-hash-v2");
+  await expect.poll(async () => readStoredDatasetHash(page, DATASET_SOURCE_ID)).toBe("community-hash-v2");
 });
 
 test("editor revisit only fetches version.json when dataset hash is unchanged", async ({ context, page }) => {
@@ -311,7 +312,7 @@ test("editor revisit only fetches version.json when dataset hash is unchanged", 
     });
   });
 
-  await context.route("**/datasets/kagi-community.json", async (route) => {
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
     communityFetchCount += 1;
     await route.fulfill({
       status: 200,
@@ -394,7 +395,7 @@ test("search mode performs zero same-origin network requests after warm cache", 
     });
   });
 
-  await context.route("**/datasets/kagi-community.json", async (route) => {
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -513,7 +514,7 @@ test("first-visit hash search bootstraps datasets without leaking query params t
   const appOrigin = new URL(baseURL).origin;
   const appOriginRequests: string[] = [];
 
-  await context.route("**/datasets/kagi-community.json", async (route) => {
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
     communityFetchCount += 1;
     await route.fulfill({
       status: 200,
@@ -592,7 +593,7 @@ test("search mode preserves unknown bang tokens for default-engine searches", as
     });
   });
 
-  await context.route("**/datasets/kagi-community.json", async (route) => {
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -633,7 +634,7 @@ test("search mode uses first known bang and keeps unknown bang tokens in the que
     });
   });
 
-  await context.route("**/datasets/kagi-community.json", async (route) => {
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",

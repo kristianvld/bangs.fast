@@ -68,7 +68,7 @@ export const BANG_DATASET_SOURCES: readonly BangDatasetSource[] = [
     label: "Kagi Community",
     description: "Kagi community-maintained bang list",
     sourceUrl: KAGI_COMMUNITY_BANGS_SOURCE_URL,
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: "kagi-internal",
@@ -82,7 +82,7 @@ export const BANG_DATASET_SOURCES: readonly BangDatasetSource[] = [
     label: "DuckDuckGo",
     description: "DuckDuckGo bang list",
     sourceUrl: DUCKDUCKGO_BANGS_SOURCE_URL,
-    defaultEnabled: false,
+    defaultEnabled: true,
   },
 ] as const;
 

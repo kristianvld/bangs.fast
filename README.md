@@ -60,7 +60,7 @@ bun run test
 bun run dev
 ```
 
-On first visit, the app fetches the selected base set (default: `Kagi` / `Kagi Community`).
+On first visit, the app fetches the selected base set (default: `DuckDuckGo`).
 You can switch presets any time between `Kagi`, `Kagi + Kagi Internal`, and `DuckDuckGo`.
 
 Datasets are generated into `public/datasets` by:
