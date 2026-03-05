@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 const APP_DB_NAME = "bangs-redirect-index";
 const DATASET_STORE_NAME = "datasets";
@@ -344,21 +344,39 @@ test("editor revisit only fetches version.json when dataset hash is unchanged", 
   versionFetchCount = 0;
   communityFetchCount = 0;
 
-  const revisitSameOriginNetworkRequests: string[] = [];
-  await context.route("**/*", async (route) => {
-    const requestUrl = route.request().url();
-    if (requestUrl.startsWith(`${appOrigin}/`)) {
-      revisitSameOriginNetworkRequests.push(requestUrl);
-    }
-    await route.fallback();
-  });
-
   await page.close();
-  const revisitPage = await context.newPage();
-  await revisitPage.goto("/");
-  await waitForEditorReady(revisitPage);
-  await expect(revisitPage.locator("#bang-table")).toContainText("!stableonly");
-  await revisitPage.waitForTimeout(350);
+  const revisitSameOriginNetworkRequests: string[] = [];
+  let revisitPage: Page | null = null;
+  const captureRevisitNetworkRequests = async (route: Route): Promise<void> => {
+    const request = route.request();
+    const requestUrl = request.url();
+
+    if (!revisitPage || !requestUrl.startsWith(`${appOrigin}/`) || request.serviceWorker() !== null) {
+      await route.fallback();
+      return;
+    }
+
+    try {
+      if (request.frame().page() === revisitPage) {
+        revisitSameOriginNetworkRequests.push(requestUrl);
+      }
+    } catch (_error) {
+      // Requests without a frame association (e.g. detached/background activity) are outside revisit page scope.
+    }
+
+    await route.fallback();
+  };
+  await context.route("**/*", captureRevisitNetworkRequests);
+
+  try {
+    revisitPage = await context.newPage();
+    await revisitPage.goto("/");
+    await waitForEditorReady(revisitPage);
+    await expect(revisitPage.locator("#bang-table")).toContainText("!stableonly");
+    await revisitPage.waitForTimeout(350);
+  } finally {
+    await context.unroute("**/*", captureRevisitNetworkRequests);
+  }
 
   expect(versionFetchCount).toBeGreaterThan(0);
   expect(communityFetchCount).toBe(0);
