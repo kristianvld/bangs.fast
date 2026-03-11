@@ -148,6 +148,19 @@ async function readLocalStorageValue(page: Page, key: string): Promise<string | 
   }
 }
 
+async function readShellSnapshot(page: Page): Promise<{ mode: string | null; background: string | null } | null> {
+  try {
+    return await page.evaluate(() => {
+      return {
+        mode: document.documentElement.dataset.shellMode ?? null,
+        background: getComputedStyle(document.body).backgroundColor || null,
+      };
+    });
+  } catch (_error) {
+    return null;
+  }
+}
+
 test("registers a versioned service worker in editor mode", async ({ page }) => {
   await page.goto("/");
   await waitForEditorReady(page);
@@ -559,6 +572,68 @@ test("first-visit hash search bootstraps datasets without leaking query params t
 
   const leakedQueryParamRequests = appOriginRequests.filter((requestUrl) => new URL(requestUrl).searchParams.has("q"));
   expect(leakedQueryParamRequests).toEqual([]);
+});
+
+test("search shell respects dark color scheme before redirect", async ({ context, page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  const baseURL = test.info().project.use.baseURL;
+  if (typeof baseURL !== "string") {
+    throw new Error("Playwright baseURL must be configured as a string for asset assertions");
+  }
+  const appOrigin = new URL(baseURL).origin;
+  const sameOriginAssetRequests: string[] = [];
+  const onRequest = (request: { url: () => string }): void => {
+    const requestUrl = request.url();
+    if (!requestUrl.startsWith(`${appOrigin}/assets/`)) return;
+    sameOriginAssetRequests.push(new URL(requestUrl).pathname);
+  };
+  context.on("request", onRequest);
+
+  let releaseDatasetResponse: (() => void) | null = null;
+  const datasetResponseReady = new Promise<void>((resolve) => {
+    releaseDatasetResponse = resolve;
+  });
+
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
+    await datasetResponseReady;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        buildCommunityDatasetFixture({
+          hash: "shell-dark-hash-v1",
+          trigger: "localspec",
+          name: "Local Spec",
+          template: "https://example.com/search?q={{{s}}}",
+          domain: "example.com",
+        }),
+      ),
+    });
+  });
+
+  await context.route("https://example.com/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!doctype html><html><body>mock redirect target</body></html>",
+    });
+  });
+
+  await page.goto("/#q=!localspec%20dark%20shell", { waitUntil: "domcontentloaded" });
+
+  const shell = await readShellSnapshot(page);
+  expect(shell).not.toBeNull();
+  expect(shell?.mode).toBe("search");
+  expect(shell?.background).toBe("rgb(31, 38, 48)");
+  expect(sameOriginAssetRequests.some((pathname) => /\/assets\/app-[^/]+\.(?:js|css)$/.test(pathname))).toBe(false);
+
+  releaseDatasetResponse?.();
+
+  await page.waitForURL("https://example.com/**");
+  const redirected = new URL(page.url());
+  expect(`${redirected.origin}${redirected.pathname}`).toBe("https://example.com/search");
+  expect(redirected.searchParams.get("q")).toBe("dark shell");
+  context.off("request", onRequest);
 });
 
 test("query-string searches are ignored and stay in editor mode", async ({ context, page }) => {

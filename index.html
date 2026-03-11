@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3efe7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1f2630" media="(prefers-color-scheme: dark)" />
     <title>!bangs.fast</title>
     <link
       rel="icon"
@@ -15,18 +17,45 @@
       title="!bangs.fast"
       href="/opensearch.xml"
     />
+    <script>
+      (() => {
+        const rawHash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+        if (!rawHash) return;
+
+        const candidate = rawHash.startsWith("?") ? rawHash.slice(1) : rawHash;
+        const params = new URLSearchParams(candidate);
+        const query = (params.get("q") ?? "").trim();
+        if (!query) return;
+
+        document.documentElement.dataset.shellMode = "search";
+      })();
+    </script>
     <style>
+      :root {
+        --shell-bg: #f3efe7;
+      }
+
+      html[data-shell-mode="search"] {
+        color-scheme: light dark;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        html[data-shell-mode="search"] {
+          --shell-bg: #1f2630;
+        }
+      }
+
       html,
       body {
         margin: 0;
         min-height: 100%;
-        background: #f3efe7;
+        background: var(--shell-bg);
       }
     </style>
     <script src="/bootstrap-guard.js"></script>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/bootstrap.ts"></script>
   </body>
 </html>

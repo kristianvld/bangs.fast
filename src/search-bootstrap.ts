@@ -1,38 +1,13 @@
 import { ensureBangDataset, readBangDatasets, type BangDatasetMap } from "./redirect/dataset-cache";
-import { removeSessionStorageItem } from "./redirect/browser-storage";
 import { mergeBangDatasets } from "./redirect/dataset-merge";
 import { ensureRedirectIndex, readRawStateStorage } from "./redirect/index-cache";
 import { logNonFatalError } from "./redirect/non-fatal";
 import { resolveRedirectUrlFromIndex } from "./redirect/runtime";
 import { type BangDatasetSourceId } from "./data/bang-datasets";
 import { readBangSourceConfig } from "./redirect/source-config";
-import { readHashSearchQuery } from "./search-url";
 import { forceEditorServiceWorkerUpdate } from "./service-worker-registration";
 
-const SHELL_RECOVERY_KEY = "bangs-shell-recovery-attempts-v1";
-const SHELL_RECOVERY_PARAM = "__shell_recover";
-
-const currentUrl = new URL(window.location.href);
-const hadRecoveryParam = currentUrl.searchParams.has(SHELL_RECOVERY_PARAM);
-if (hadRecoveryParam) {
-  currentUrl.searchParams.delete(SHELL_RECOVERY_PARAM);
-}
-
-removeSessionStorageItem(SHELL_RECOVERY_KEY);
-
-if (hadRecoveryParam) {
-  window.history.replaceState(null, "", currentUrl.toString());
-}
-
-const searchQuery = readHashSearchQuery(currentUrl.hash);
-
-if (searchQuery) {
-  void handleQueryNavigation(currentUrl, searchQuery);
-} else {
-  void import("./app");
-}
-
-async function handleQueryNavigation(url: URL, rawQuery: string): Promise<void> {
+export async function handleSearchNavigation(url: URL, rawQuery: string): Promise<void> {
   const rawState = readRawStateStorage();
   const sourceConfig = readBangSourceConfig();
   let datasets = await readBangDatasets(sourceConfig.enabled);
