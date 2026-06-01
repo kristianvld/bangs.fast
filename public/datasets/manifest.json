@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-05-31T04:38:32.935Z",
+  "generatedAt": "2026-06-01T04:41:32.909Z",
   "sources": {
     "kagi-community": {
       "sourceId": "kagi-community",
       "path": "datasets/kagi-community.json",
       "sourceUrl": "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json",
-      "fetchedAt": "2026-05-31T04:38:32.935Z",
-      "hash": "eb609738",
-      "entryCount": 10888
+      "fetchedAt": "2026-06-01T04:41:32.909Z",
+      "hash": "ce1c1425",
+      "entryCount": 10889
     },
     "kagi-internal": {
       "sourceId": "kagi-internal",
       "path": "datasets/kagi-internal.json",
       "sourceUrl": "https://raw.githubusercontent.com/kagisearch/bangs/main/data/kagi_bangs.json",
-      "fetchedAt": "2026-05-31T04:38:33.377Z",
+      "fetchedAt": "2026-06-01T04:41:33.155Z",
       "hash": "2de5819d",
       "entryCount": 400
     },
@@ -21,7 +21,7 @@
       "sourceId": "duckduckgo",
       "path": "datasets/duckduckgo.json",
       "sourceUrl": "https://duckduckgo.com/bang.js",
-      "fetchedAt": "2026-05-31T04:38:33.514Z",
+      "fetchedAt": "2026-06-01T04:41:33.193Z",
       "hash": "0411f0e4",
       "entryCount": 12826
     }
