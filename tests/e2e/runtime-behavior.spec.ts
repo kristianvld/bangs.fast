@@ -4,6 +4,7 @@ const APP_DB_NAME = "bangs-redirect-index";
 const DATASET_STORE_NAME = "datasets";
 const DATASET_SOURCE_ID = "duckduckgo";
 const DATASET_SOURCE_PATH = "/datasets/duckduckgo.json";
+const STATE_STORAGE_KEY = "bangs-local-state-v1";
 
 type VersionFixture = {
   appBuildId: string;
@@ -18,6 +19,13 @@ type DatasetFixture = {
   domain: string;
 };
 
+type DatasetBangFixture = Omit<DatasetFixture, "hash">;
+
+type LocalStateSnapshot = {
+  overrides?: Record<string, { disabled?: unknown }>;
+  custom?: Array<{ t?: unknown; disabled?: unknown }>;
+};
+
 function buildVersionFixture({ appBuildId, hash }: VersionFixture): Record<string, unknown> {
   return {
     appBuildId,
@@ -29,19 +37,24 @@ function buildVersionFixture({ appBuildId, hash }: VersionFixture): Record<strin
 }
 
 function buildCommunityDatasetFixture({ hash, trigger, name, template, domain }: DatasetFixture): Record<string, unknown> {
+  return buildDatasetFixture({
+    hash,
+    bangs: [{ trigger, name, template, domain }],
+  });
+}
+
+function buildDatasetFixture({ hash, bangs }: { hash: string; bangs: DatasetBangFixture[] }): Record<string, unknown> {
   return {
     sourceId: DATASET_SOURCE_ID,
     sourceUrl: DATASET_SOURCE_PATH,
     fetchedAt: new Date().toISOString(),
     hash,
-    bangs: [
-      {
-        t: trigger,
-        s: name,
-        d: domain,
-        u: template,
-      },
-    ],
+    bangs: bangs.map(({ trigger, name, template, domain }) => ({
+      t: trigger,
+      s: name,
+      d: domain,
+      u: template,
+    })),
   };
 }
 
@@ -146,6 +159,12 @@ async function readLocalStorageValue(page: Page, key: string): Promise<string | 
     // The page can transiently reload while service-worker updates roll out.
     return null;
   }
+}
+
+async function readLocalState(page: Page): Promise<LocalStateSnapshot | null> {
+  const raw = await readLocalStorageValue(page, STATE_STORAGE_KEY);
+  if (!raw) return null;
+  return JSON.parse(raw) as LocalStateSnapshot;
 }
 
 async function readShellSnapshot(page: Page): Promise<{ mode: string | null; background: string | null } | null> {
@@ -308,6 +327,108 @@ test("refreshes enabled dataset when version hash changes", async ({ context, pa
   await expect(page.locator("#bang-table")).not.toContainText("!versionone");
   expect(communityFetchCount).toBeGreaterThan(0);
   await expect.poll(async () => readStoredDatasetHash(page, DATASET_SOURCE_ID)).toBe("community-hash-v2");
+});
+
+test("dataset refresh preserves enabled custom bang when new base bang uses same trigger", async ({ context, page }) => {
+  let generation = 1;
+
+  await context.addInitScript(
+    ({ stateStorageKey, initialState }) => {
+      if (!localStorage.getItem(stateStorageKey)) {
+        localStorage.setItem(stateStorageKey, JSON.stringify(initialState));
+      }
+    },
+    {
+      stateStorageKey: STATE_STORAGE_KEY,
+      initialState: {
+        overrides: {},
+        custom: [
+          {
+            id: "custom-gai",
+            t: "gai",
+            s: "Custom Google AI",
+            d: "custom.example",
+            u: "https://custom.example/search?q={{{s}}}",
+          },
+        ],
+        settings: {
+          defaultEngine: "google",
+          defaultBangTrigger: "g",
+        },
+      },
+    },
+  );
+
+  await context.route("**/version.json", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        buildVersionFixture({
+          appBuildId: "stable-custom-conflict-build",
+          hash: generation === 1 ? "custom-conflict-hash-v1" : "custom-conflict-hash-v2",
+        }),
+      ),
+    });
+  });
+
+  await context.route(`**${DATASET_SOURCE_PATH}`, async (route) => {
+    const payload =
+      generation === 1
+        ? buildDatasetFixture({
+            hash: "custom-conflict-hash-v1",
+            bangs: [
+              {
+                trigger: "plainbase",
+                name: "Plain Base Search",
+                template: "https://example.com/plain?q={{{s}}}",
+                domain: "example.com",
+              },
+            ],
+          })
+        : buildDatasetFixture({
+            hash: "custom-conflict-hash-v2",
+            bangs: [
+              {
+                trigger: "gai",
+                name: "Base Google AI",
+                template: "https://example.com/gai?q={{{s}}}",
+                domain: "example.com",
+              },
+            ],
+          });
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(payload),
+    });
+  });
+
+  await page.goto("/");
+  await waitForEditorReady(page);
+  await expect(page.locator("#stats")).toContainText("custom: 1 | disabled: 0");
+
+  let state = await readLocalState(page);
+  expect(state?.overrides?.gai).toBeUndefined();
+  expect(state?.custom?.find((entry) => entry.t === "gai")?.disabled).not.toBe(true);
+
+  generation = 2;
+  await page.reload();
+  await waitForEditorReady(page);
+  await expect(page.locator("#stats")).toContainText("custom: 1 | disabled: 1");
+
+  state = await readLocalState(page);
+  expect(state?.overrides?.gai?.disabled).toBe(true);
+  expect(state?.custom?.find((entry) => entry.t === "gai")?.disabled).not.toBe(true);
+
+  await page.reload();
+  await waitForEditorReady(page);
+  await expect(page.locator("#stats")).toContainText("custom: 1 | disabled: 1");
+
+  state = await readLocalState(page);
+  expect(state?.overrides?.gai?.disabled).toBe(true);
+  expect(state?.custom?.find((entry) => entry.t === "gai")?.disabled).not.toBe(true);
 });
 
 test("editor revisit only fetches version.json when dataset hash is unchanged", async ({ context, page }) => {

@@ -1290,7 +1290,7 @@ function BangsFastApp(): ReactElement {
   const [sourceDatasets, setSourceDatasets] = useState<BangDatasetMap>({});
   const [baseBangs, setBaseBangs] = useState<Bang[]>([]);
   const [baseByTrigger, setBaseByTrigger] = useState<Map<string, Bang>>(new Map());
-  const [state, setState] = useState<State>(() => loadState(new Map()));
+  const [state, setState] = useState<State>(() => structuredClone(DEFAULT_STATE));
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilterKind, setActiveFilterKind] = useState<FilterKind>("all");
@@ -1542,10 +1542,6 @@ function BangsFastApp(): ReactElement {
       sourceDatasetsRef.current = cachedDatasets;
       setSourceDatasets(cachedDatasets);
 
-      const loadedState = loadState(baseByTriggerRef.current);
-      stateRef.current = loadedState;
-      setState(loadedState);
-
       const versionSnapshot = await loadVersionSnapshot(true);
       if (!mountedRef.current || runId !== bootstrapRunRef.current) return;
 
@@ -1567,6 +1563,10 @@ function BangsFastApp(): ReactElement {
 
       mergedRef.current = merged;
       const sanitizedBase = setBaseData(merged.bangs);
+
+      const loadedState = loadState(baseByTriggerRef.current);
+      stateRef.current = loadedState;
+      setState(loadedState);
 
       const reconciledState = reconcileCustomPriorityConflicts(loadedState, sanitizedBase);
       if (reconciledState !== loadedState) {
