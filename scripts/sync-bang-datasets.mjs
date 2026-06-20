@@ -1,6 +1,9 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 const OUTPUT_DIR = new URL("../public/datasets/", import.meta.url);
+const COMMIT_MESSAGE_PATH = process.env.DATASET_SYNC_COMMIT_MESSAGE_PATH;
+const COMMIT_MESSAGE_BANG_LIMIT = 30;
+const COMMIT_MESSAGE_TITLE_LIMIT = 100;
 
 const KAGI_COMMUNITY_SOURCE_URL = "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json";
 const KAGI_INTERNAL_SOURCE_URL = "https://raw.githubusercontent.com/kagisearch/bangs/main/data/kagi_bangs.json";
@@ -337,6 +340,149 @@ function buildDatasetHash(bangs) {
   return fnv1aHex(JSON.stringify(bangs));
 }
 
+async function readJsonFile(path) {
+  try {
+    return parseJsonLikeText(await readFile(path, "utf8"));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function toComparableDataset(dataset) {
+  if (!isPlainObject(dataset)) return null;
+  if (typeof dataset.sourceId !== "string") return null;
+  if (typeof dataset.sourceUrl !== "string") return null;
+  if (typeof dataset.hash !== "string") return null;
+  if (!Array.isArray(dataset.bangs)) return null;
+
+  return {
+    sourceId: dataset.sourceId,
+    sourceUrl: dataset.sourceUrl,
+    hash: dataset.hash,
+    bangs: dataset.bangs,
+  };
+}
+
+function datasetsEqual(left, right) {
+  const comparableLeft = toComparableDataset(left);
+  const comparableRight = toComparableDataset(right);
+  if (!comparableLeft || !comparableRight) return false;
+  return JSON.stringify(comparableLeft) === JSON.stringify(comparableRight);
+}
+
+function bangSignature(bang) {
+  return JSON.stringify(bang);
+}
+
+function listChangedBangTriggers(previousBangs, nextBangs) {
+  const previous = new Map();
+  const next = new Map();
+
+  for (const bang of Array.isArray(previousBangs) ? previousBangs : []) {
+    if (isPlainObject(bang) && typeof bang.t === "string") {
+      previous.set(bang.t, bangSignature(bang));
+    }
+  }
+
+  for (const bang of Array.isArray(nextBangs) ? nextBangs : []) {
+    if (isPlainObject(bang) && typeof bang.t === "string") {
+      next.set(bang.t, bangSignature(bang));
+    }
+  }
+
+  const triggers = new Set([...previous.keys(), ...next.keys()]);
+  return [...triggers]
+    .filter((trigger) => previous.get(trigger) !== next.get(trigger))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function buildManifestSource(source, dataset) {
+  return {
+    sourceId: source.id,
+    path: `datasets/${source.id}.json`,
+    sourceUrl: dataset.sourceUrl,
+    fetchedAt: dataset.fetchedAt,
+    hash: dataset.hash,
+    entryCount: dataset.bangs.length,
+  };
+}
+
+function formatBangTrigger(trigger) {
+  return trigger.startsWith("!") ? trigger : `!${trigger}`;
+}
+
+function formatBangCount(count) {
+  return `${count} ${count === 1 ? "bang" : "bangs"}`;
+}
+
+function buildCommitTitle(changedSources) {
+  if (changedSources.length === 0) {
+    return "chore(data): sync bang datasets";
+  }
+
+  const sourceSummary = changedSources
+    .map((change) => {
+      const count = change.changedBangTriggers.length;
+      return count > 0 ? `${change.sourceId} (${formatBangCount(count)})` : `${change.sourceId} (metadata)`;
+    })
+    .join(", ");
+  const title = `chore(data): sync ${sourceSummary}`;
+  if (title.length <= COMMIT_MESSAGE_TITLE_LIMIT) {
+    return title;
+  }
+
+  const totalChangedBangs = changedSources.reduce((total, change) => total + change.changedBangTriggers.length, 0);
+  return `chore(data): sync ${changedSources.length} datasets (${formatBangCount(totalChangedBangs)})`;
+}
+
+function buildCommitMessage(changes) {
+  const changedSources = changes.filter((change) => change.changed);
+  const totalChangedBangs = changedSources.reduce((total, change) => total + change.changedBangTriggers.length, 0);
+  const lines = [buildCommitTitle(changedSources)];
+
+  if (changedSources.length === 0) {
+    lines.push("", "Updated dataset metadata.");
+    return `${lines.join("\n")}\n`;
+  }
+
+  lines.push("", "Updated bangs:");
+
+  let remaining = COMMIT_MESSAGE_BANG_LIMIT;
+  for (const [index, change] of changedSources.entries()) {
+    if (change.changedBangTriggers.length === 0) {
+      lines.push(`- ${change.sourceId}: metadata only`);
+      continue;
+    }
+
+    const remainingSourcesWithBangChanges = changedSources
+      .slice(index + 1)
+      .filter((nextChange) => nextChange.changedBangTriggers.length > 0)
+      .length;
+    const limitForSource = Math.max(remaining - remainingSourcesWithBangChanges, 0);
+    const visibleTriggers = change.changedBangTriggers.slice(0, limitForSource);
+    remaining -= visibleTriggers.length;
+
+    if (visibleTriggers.length === 0) {
+      lines.push(`- ${change.sourceId}: ${change.changedBangTriggers.length} bangs`);
+      continue;
+    }
+
+    const formattedTriggers = visibleTriggers.map(formatBangTrigger).join(", ");
+    const hiddenCount = change.changedBangTriggers.length - visibleTriggers.length;
+    const suffix = hiddenCount > 0 ? `, and ${hiddenCount} more` : "";
+    lines.push(`- ${change.sourceId}: ${formattedTriggers}${suffix}`);
+  }
+
+  if (totalChangedBangs > COMMIT_MESSAGE_BANG_LIMIT) {
+    lines.push("", `Showing ${COMMIT_MESSAGE_BANG_LIMIT} of ${totalChangedBangs} changed bangs.`);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
 async function loadFromUrl(url) {
   const response = await fetch(url, {
     cache: "no-store",
@@ -348,8 +494,7 @@ async function loadFromUrl(url) {
   return parseJsonLikeText(text);
 }
 
-async function buildSourceDataset(source) {
-  const fetchedAt = new Date().toISOString();
+async function buildSourceDataset(source, fetchedAt) {
   const payload = await loadFromUrl(source.upstreamUrl);
   const entries = extractRawEntries(payload);
 
@@ -397,35 +542,52 @@ async function buildSourceDataset(source) {
 async function main() {
   await mkdir(OUTPUT_DIR, { recursive: true });
 
-  const generatedAt = new Date().toISOString();
+  const runTimestamp = new Date().toISOString();
+  const previousManifestPath = new URL("manifest.json", OUTPUT_DIR);
+  const previousManifest = await readJsonFile(previousManifestPath);
   const manifest = {
-    generatedAt,
+    generatedAt: runTimestamp,
     sources: {},
   };
+  const changes = [];
 
   for (const source of SOURCES) {
-    const built = await buildSourceDataset(source);
+    const built = await buildSourceDataset(source, runTimestamp);
     const outputPath = new URL(`${source.id}.json`, OUTPUT_DIR);
-    await writeFile(outputPath, `${JSON.stringify(built.dataset)}\n`, "utf8");
+    const previousDataset = await readJsonFile(outputPath);
+    const changed = !datasetsEqual(previousDataset, built.dataset);
+    const dataset = changed ? built.dataset : previousDataset;
 
-    manifest.sources[source.id] = {
+    if (changed) {
+      await writeFile(outputPath, `${JSON.stringify(built.dataset)}\n`, "utf8");
+    }
+
+    manifest.sources[source.id] = buildManifestSource(source, dataset);
+    changes.push({
       sourceId: source.id,
-      path: `datasets/${source.id}.json`,
-      sourceUrl: source.upstreamUrl,
-      fetchedAt: built.dataset.fetchedAt,
-      hash: built.dataset.hash,
-      entryCount: built.dataset.bangs.length,
-    };
+      changed,
+      changedBangTriggers: changed ? listChangedBangTriggers(previousDataset?.bangs, built.dataset.bangs) : [],
+    });
 
     const { total, kept, droppedInvalid, droppedDuplicateTrigger, mergedEquivalentEntries } = built.stats;
+    const writeStatus = changed ? "wrote" : "unchanged";
     console.log(
-      `[${source.id}] wrote ${outputPath.pathname} (input: ${total}, kept: ${kept}, dropped invalid: ${droppedInvalid}, duplicate trigger: ${droppedDuplicateTrigger}, merged equivalent: ${mergedEquivalentEntries})`,
+      `[${source.id}] ${writeStatus} ${outputPath.pathname} (input: ${total}, kept: ${kept}, dropped invalid: ${droppedInvalid}, duplicate trigger: ${droppedDuplicateTrigger}, merged equivalent: ${mergedEquivalentEntries})`,
     );
   }
 
-  const manifestPath = new URL("manifest.json", OUTPUT_DIR);
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  console.log(`Wrote manifest to ${manifestPath.pathname}`);
+  const hasDatasetChanges = changes.some((change) => change.changed);
+  if (hasDatasetChanges || previousManifest === null) {
+    await writeFile(previousManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    console.log(`Wrote manifest to ${previousManifestPath.pathname}`);
+  } else {
+    console.log(`Manifest unchanged at ${previousManifestPath.pathname}`);
+  }
+
+  if (COMMIT_MESSAGE_PATH) {
+    await writeFile(COMMIT_MESSAGE_PATH, buildCommitMessage(changes), "utf8");
+    console.log(`Wrote commit message to ${COMMIT_MESSAGE_PATH}`);
+  }
 }
 
 main().catch((error) => {
