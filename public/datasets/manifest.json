@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-30T09:54:08.604Z",
+  "generatedAt": "2026-11-03T10:43:55.036Z",
   "sources": {
     "kagi-community": {
       "sourceId": "kagi-community",
       "path": "datasets/kagi-community.json",
       "sourceUrl": "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json",
-      "fetchedAt": "2026-10-30T09:54:08.604Z",
-      "hash": "d3fd95bf",
-      "entryCount": 10908
+      "fetchedAt": "2026-11-03T10:43:55.036Z",
+      "hash": "c1610caa",
+      "entryCount": 10909
     },
     "kagi-internal": {
       "sourceId": "kagi-internal",
